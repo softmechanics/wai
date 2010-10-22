@@ -12,8 +12,11 @@ module Network.Wai.Enumerator
     , toSource
       -- ** Handle
     , fromHandle
+    , fromHandle'
       -- ** FilePath
     , fromFile
+    , fromFile'
+    , fromTempFile
     , fromResponseBody
     ) where
 
@@ -21,7 +24,8 @@ import Network.Wai (Enumerator (..), Source (..), ResponseBody (..))
 import qualified Network.Wai.Source as Source
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString as B
-import System.IO (withBinaryFile, IOMode (ReadMode), Handle, hIsEOF)
+import System.IO (withBinaryFile, IOMode (ReadMode), Handle, hIsEOF, hClose)
+import System.Directory (removeFile)
 import Data.ByteString.Lazy.Internal (defaultChunkSize)
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
@@ -93,22 +97,39 @@ toSource (Enumerator e) = do
 -- | Read a chunk of data from the given 'Handle' at a time. We use
 -- 'defaultChunkSize' from the bytestring package to determine the largest
 -- chunk to take.
-fromHandle :: Handle -> Enumerator
-fromHandle h = Enumerator $ \iter a -> do
+fromHandle' :: Handle -> IO a -> Enumerator
+fromHandle' h onEOF = go
+ where
+  go = Enumerator $ \iter a -> do
     eof <- hIsEOF h
     if eof
-        then return $ Right a
+        then do
+            _ <- onEOF
+            return $ Right a
         else do
             bs <- B.hGet h defaultChunkSize
             ea' <- iter a bs
             case ea' of
                 Left a' -> return $ Left a'
-                Right a' -> runEnumerator (fromHandle h) iter a'
+                Right a' -> runEnumerator go iter a'
 
--- | A little wrapper around 'fromHandle' which first opens a file for reading.
+-- | Read from a handle and close after EOF
+fromHandle :: Handle -> Enumerator
+fromHandle h = fromHandle' h $ hClose h
+
+-- | A little wrapper around fromHandle' which first opens a file for reading.
+-- The handle is closed before the onEOF action is performed
+fromFile' :: FilePath -> IO a -> Enumerator
+fromFile' fp onEOF = Enumerator $ \iter a0 -> withBinaryFile fp ReadMode $ \h ->
+    runEnumerator (fromHandle' h $ hClose h >> onEOF) iter a0
+
+-- | Enumerator to read and close a file
 fromFile :: FilePath -> Enumerator
-fromFile fp = Enumerator $ \iter a0 -> withBinaryFile fp ReadMode $ \h ->
-    runEnumerator (fromHandle h) iter a0
+fromFile fp = fromFile' fp $ return ()
+
+-- | Enumerator to read and remove a file
+fromTempFile :: FilePath -> Enumerator
+fromTempFile fp = fromFile' fp $ removeFile fp
 
 -- | Since the response body is defined as a 'ResponseBody', this function
 -- simply reduces the whole value to an enumerator. This can be convenient for
