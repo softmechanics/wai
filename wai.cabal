@@ -22,5 +22,7 @@ Library
                    , blaze-builder          >= 0.2      && < 0.3
                    , enumerator             >= 0.4      && < 0.5
                    , network                >= 2.2      && < 2.4
+                   , transformers           >= 0.2      && < 0.3
   Exposed-modules:   Network.Wai
+                   , Network.Wai.Util
   ghc-options:       -Wall
