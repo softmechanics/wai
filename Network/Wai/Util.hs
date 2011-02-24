@@ -14,6 +14,7 @@ import qualified Data.Enumerator as E
 import System.IO.Unsafe
 import Prelude hiding (catch)
 import Blaze.ByteString.Builder
+import Network.Wai
 
 type MMRes a = MVar (Maybe (Either SomeException a)) 
 
@@ -38,11 +39,12 @@ putMVarWhen mNeedMore mout (x:xs) = do
      else return ()
 --}
 
-withLBS :: (L.ByteString -> IO L.ByteString) -> E.Enumeratee B.ByteString Builder IO a
-withLBS f step = do
+withLBS :: (L.ByteString -> IO (Status, ResponseHeaders, L.ByteString)) -> ResponseEnumeratee a
+withLBS lbsApp responseIter = do
   min <- liftIO $ newEmptyMVar
   mout <- liftIO $ newEmptyMVar
   mNeedMoreOut <- liftIO $ newEmptyMVar 
+  miter <- liftIO $ newEmptyMVar
 
   _ <- liftIO $ forkIO $ do
            let loop [] = do
@@ -58,11 +60,13 @@ withLBS f step = do
                               loop xs
                       else return ()
            finally 
-             (do lbs <- f =<< evalLBS min
+             (do (status, hdrs, lbs) <- lbsApp =<< evalLBS min
+                 putMVar miter $ responseIter status hdrs
                  loop $ L.toChunks lbs)
              (putStrLn "finally" >> putMVar mout Nothing)
 
-  enumerateeLBS mNeedMoreOut min mout step
+  iter <- liftIO $ takeMVar miter
+  E.joinI $ enumerateeLBS mNeedMoreOut min mout $$ iter
 
 evalLBS :: MVar [B.ByteString] -> IO L.ByteString
 evalLBS mbs = fmap L.fromChunks go

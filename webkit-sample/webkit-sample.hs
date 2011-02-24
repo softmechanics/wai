@@ -15,36 +15,18 @@ main :: IO ()
 main = putStrLn "http://localhost:3000/" >> run 3000 app
 
 app :: Application
-app = AppEnum $ \req f ->
+app = AppEnum $ \req ->
   case pathInfo req of
-    {--
-    "/post/" -> do
-        bss <- consume
-        postResponse $ L.fromChunks bss
-    --}
-    "/postWithLBSComplete/" -> do
-        joinI $ withLBS return $$ f status200 [("Content-Type", "text/plain"), ("Transfer-Encoding", "chunked")]
-    "/postWithLBSPartial/" -> do
-        joinI $ withLBS (return . L.fromChunks . take 1 . L.toChunks) $$ f status200 [("Content-Type", "text/plain")]
+    "/postWithLBSComplete/" -> 
+        withLBS $ \lbs -> return (
+            status200
+          , [("Content-Type", "text/plain"), ("Transfer-Encoding", "chunked")]
+          , lbs
+          )
+    "/postWithLBSPartial/" -> 
+        withLBS $ \lbs -> return (
+            status200
+          , [("Content-Type", "text/plain")]
+          , L.fromChunks $ take 1 $ L.toChunks lbs
+          )
 
-    {--
-    "/postWithLBSPartial/" -> do
-        eiter <- withLBS (postResponse . L.fromChunks . take 1 . L.toChunks)
-        case eiter of
-             Left e -> liftIO $ throwIO e
-             Right i -> return i
-    _ -> indexResponse
-    --}
-
-indexResponse :: Iteratee ByteString IO Response
-indexResponse = return $ ResponseFile
-    status200
-    [("Content-Type" , "text/html")]
-    "index.html"
-
-postResponse :: Monad m => L.ByteString -> m Response
-postResponse lbs = return $ ResponseBuilder
-    status200
-    [("Content-Type", "text/plain")]
-    b 
-  where !b = (fromLazyByteString lbs)
