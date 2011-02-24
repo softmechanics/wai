@@ -61,6 +61,7 @@ module Network.Wai
     , Request (..)
     , Response (..)
     , ResponseEnumerator
+    , ResponseEnumeratee
     , responseEnumerator
     , Application (..)
     , Middleware

@@ -49,21 +49,21 @@ withLBS lbsApp responseIter = do
   _ <- liftIO $ forkIO $ do
            let loop [] = do
                    putStrLn "end of output"
-                   return ()
+                   putMVar mout $ Left Nothing
                loop (x:xs) = do
                    putStrLn "taking need more out"
                    b <- takeMVar mNeedMoreOut
                    putStrLn $ "need more out: " ++ show b
                    if b
                       then do putStrLn $ "sending out: " ++ show x
-                              putMVar mout $ Just x
+                              putMVar mout $ Right x
                               loop xs
                       else return ()
-           finally 
+           catch 
              (do (status, hdrs, lbs) <- lbsApp =<< evalLBS min
                  putMVar miter $ responseIter status hdrs
                  loop $ L.toChunks lbs)
-             (putStrLn "finally" >> putMVar mout Nothing)
+             (putMVar mout . Left . Just)
 
   iter <- liftIO $ takeMVar miter
   E.joinI $ enumerateeLBS mNeedMoreOut min mout $$ iter
@@ -81,7 +81,7 @@ evalLBS mbs = fmap L.fromChunks go
 -- try to read from mout until mNeedMoreIn is true
 enumerateeLBS :: MVar Bool
               -> MVar [B.ByteString]
-              -> MVar (Maybe B.ByteString)
+              -> MVar (Either (Maybe SomeException) B.ByteString)
               -> E.Enumeratee B.ByteString Builder IO a
 enumerateeLBS mNeedMoreOut min mout = checkDone (E.continue . step) 
   where step :: (E.Stream Builder -> E.Iteratee Builder IO a)
@@ -104,16 +104,15 @@ enumerateeLBS mNeedMoreOut min mout = checkDone (E.continue . step)
           -- drain output
           liftIO $ putStrLn "draining mout"
           liftIO $ tryPutMVar mNeedMoreOut True 
-          out <- liftIO $ tryTakeMVar mout
+          out <- liftIO $ takeMVar mout
           liftIO $ putStrLn $ "got mout: " ++ show out
           case out of
-               Just r -> do
+               Right r -> do
                  putStrLn $ "drained: " ++ show r
-                 return $ fmap fromByteString r
-               Nothing -> do 
-                 -- empty
-                 liftIO yield
-                 doDrain
+                 return $ Just $ fromByteString r
+               Left Nothing -> return Nothing
+               Left (Just e) -> throwIO e
+                 
 
         checkDone :: ((E.Stream Builder -> E.Iteratee Builder IO a) -> E.Iteratee B.ByteString IO (E.Step Builder IO a))
                   -> E.Enumeratee B.ByteString Builder IO a
@@ -139,17 +138,17 @@ enumerateeLBS mNeedMoreOut min mout = checkDone (E.continue . step)
                out <- liftIO $ tryTakeMVar mout
                liftIO $ putStrLn $ "got mout: " ++ show out
                case out of
-                    Just (Just x) -> do
+                    Just (Right x) -> do
                       liftIO $ tryPutMVar mNeedMoreOut True 
                       liftIO $ print x
                       k (E.Chunks [fromByteString x]) >>== checkDone (E.continue . step)
-                    Just Nothing -> do
+                    Just (Left Nothing) -> do
                       -- eof
-                      liftIO $ putStrLn "eof output"
-                      liftIO $ tryPutMVar mNeedMoreOut True 
                       liftIO $ putStrLn "no more output"
                       k E.EOF >>== E.checkDone (E.continue . step)
-
+                    Just (Left (Just e)) -> do
+                      liftIO $ putStrLn "exception!"
+                      liftIO $ throwIO e
                     Nothing -> do 
                       -- empty
                       liftIO $ tryPutMVar mNeedMoreOut True 

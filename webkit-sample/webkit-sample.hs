@@ -20,7 +20,7 @@ app = AppEnum $ \req ->
     "/postWithLBSComplete/" -> 
         withLBS $ \lbs -> return (
             status200
-          , [("Content-Type", "text/plain"), ("Transfer-Encoding", "chunked")]
+          , [("Content-Type", "text/plain")]
           , lbs
           )
     "/postWithLBSPartial/" -> 
@@ -29,4 +29,9 @@ app = AppEnum $ \req ->
           , [("Content-Type", "text/plain")]
           , L.fromChunks $ take 1 $ L.toChunks lbs
           )
-
+    "/postWithLBSException/" -> 
+        withLBS $ \_ -> return (
+            status200
+          , [("Content-Type", "text/plain")]
+          , error "postWithLBSException"
+          )
