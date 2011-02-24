@@ -62,7 +62,7 @@ module Network.Wai
     , Response (..)
     , ResponseEnumerator
     , responseEnumerator
-    , Application
+    , Application (..)
     , Middleware
       -- * Response body smart constructors
     , responseLBS
@@ -74,7 +74,7 @@ import qualified Data.ByteString.Lazy as L
 import Data.Char (toLower)
 import Data.String (IsString (..))
 import Data.Typeable (Typeable)
-import Data.Enumerator (Iteratee, ($$), joinI, run_)
+import Data.Enumerator (Iteratee, Enumeratee, ($$), joinI, run_)
 import qualified Data.Enumerator as E
 import Data.Enumerator.IO (enumFile)
 import Blaze.ByteString.Builder (Builder, fromByteString, fromLazyByteString)
@@ -239,6 +239,9 @@ data Response
 type ResponseEnumerator a =
     (Status -> ResponseHeaders -> Iteratee Builder IO a) -> IO a
 
+type ResponseEnumeratee a = 
+    (Status -> ResponseHeaders -> Iteratee Builder IO a) -> Iteratee B.ByteString IO a
+
 responseEnumerator :: Response -> ResponseEnumerator a
 responseEnumerator (ResponseEnumerator e) f = e f
 responseEnumerator (ResponseFile s h fp) f =
@@ -250,7 +253,9 @@ responseEnumerator (ResponseBuilder s h b) f = run_ $ do
 responseLBS :: Status -> ResponseHeaders -> L.ByteString -> Response
 responseLBS s h = ResponseBuilder s h . fromLazyByteString
 
-type Application = Request -> Iteratee B.ByteString IO Response
+data Application = 
+    AppIter (Request -> Iteratee B.ByteString IO Response)
+  | AppEnum (forall a. Request -> ResponseEnumeratee a)
 
 -- | Middleware is a component that sits between the server and application. It
 -- can do such tasks as GZIP encoding or response caching. What follows is the
