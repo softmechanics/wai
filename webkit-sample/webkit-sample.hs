@@ -30,8 +30,8 @@ app = AppEnum $ \req ->
           , L.fromChunks $ take 1 $ L.toChunks lbs
           )
     "/postWithLBSException/" -> 
-        withLBS $ \_ -> return (
+        withLBS $ \lbs -> return (
             status200
           , [("Content-Type", "text/plain")]
-          , error "postWithLBSException"
+          , L.fromChunks $ L.toChunks lbs ++ [error "postWithLBSException"]
           )
