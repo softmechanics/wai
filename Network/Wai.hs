@@ -36,7 +36,9 @@ module Network.Wai
     , http10
     , http11
       -- ** Case-insensitive byte strings
-    , CIByteString (..)
+    , CIByteString
+    , ciOriginal
+    , ciLowerCase
     , mkCIByteString
       -- ** Request header names
     , RequestHeader
@@ -72,15 +74,13 @@ module Network.Wai
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy as L
-import Data.Char (toLower)
-import Data.String (IsString (..))
 import Data.Typeable (Typeable)
 import Data.Enumerator (Iteratee, ($$), joinI, run_)
 import qualified Data.Enumerator as E
 import Data.Enumerator.IO (enumFile)
 import Blaze.ByteString.Builder (Builder, fromByteString, fromLazyByteString)
-import Data.Data (Data)
 import Network.Socket (SockAddr)
+import Data.CaseInsensitive
 
 -- | HTTP request method. Since the HTTP protocol allows arbitrary request
 -- methods, we leave this open as a 'B.ByteString'. Please note the request
@@ -112,26 +112,15 @@ http11 = B8.pack "1.1"
 --
 -- Please note that this datatype has an 'IsString' instance, which can allow
 -- for very concise code when using the OverloadedStrings language extension.
-data CIByteString = CIByteString
-    { ciOriginal :: !B.ByteString
-    , ciLowerCase :: !B.ByteString
-    }
-    deriving (Data, Typeable)
+type CIByteString = CI B.ByteString
+
+ciOriginal, ciLowerCase :: CIByteString -> B.ByteString
+ciOriginal = original
+ciLowerCase = foldedCase
 
 -- | Convert a regular bytestring to a case-insensitive bytestring.
 mkCIByteString :: B.ByteString -> CIByteString
-mkCIByteString bs = CIByteString bs $ B8.map toLower bs
-
-instance Show CIByteString where
-    show = show . ciOriginal
-instance Read CIByteString where
-    readsPrec i = map (\(x, y) -> (mkCIByteString x, y)) . readsPrec i
-instance Eq CIByteString where
-    x == y = ciLowerCase x == ciLowerCase y
-instance Ord CIByteString where
-    x <= y = ciLowerCase x <= ciLowerCase y
-instance IsString CIByteString where
-    fromString = mkCIByteString . fromString
+mkCIByteString = mk
 
 -- | Headers sent from the client to the server. Note that this is a
 -- case-insensitive string, as the HTTP spec specifies.
